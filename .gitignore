@@ -1,0 +1,26 @@
+__pycache__
+
+# Backup files
+*~
+
+# Data folders
+*data
+
+# Model files
+*models
+*tar
+
+
+# Large raw files
+raw_attention_map/
+chinese_results/
+inference_vis/
+results/
+*npy
+
+# Unwanted changes
+kid_combined_raw/
+kid_combined_normalized/
+
+# Scratch
+scratch/
