@@ -1,0 +1,455 @@
+---
+title: "Learning the generative principles of a symbol system from limited examples"
+author: "Lei Yuan"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+    pdf_document: default
+---
+
+**set up**
+```{r, echo=FALSE, message = FALSE}
+show = FALSE
+library("ggplot2")
+library("tidyverse")
+library("afex")
+library("lsr")
+
+options("scipen"=100, "digits"=4)
+
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+set_sum_contrasts() # for experimental designs, set orthogonal sum-to-zero contrasts globally
+
+```
+# Edit distance analysis
+## Load data
+```{r}
+############### get all data from trained models
+temp = NULL
+
+for (i in 1:50) {
+temp_new = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/kid_trained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "new", id = i)
+
+temp_old = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/kid_trained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "old", id = i)
+
+temp = rbind(temp, temp_new, temp_old)
+}
+
+# all items, overall scores by id
+data_training = temp %>% 
+  group_by(id) %>% 
+  summarise(acc = mean(correct)) %>%
+  mutate(time = "100 epoches")
+
+# completely novel items, scores by id
+data_training_new = temp %>%
+  filter(category == "new") %>%
+  group_by(id) %>%
+  summarise(acc = mean(correct)) %>%
+  mutate(time = "100 epoches")
+
+
+############ get all data from control models
+
+for (i in 1:50) {
+  temp_new = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/untrained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "new", id = i)
+  
+  temp_old = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/untrained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "old", id = i)
+  
+  temp = rbind(temp, temp_new, temp_old)
+}
+
+# all items, overall scores by id
+data_control = temp %>%
+  group_by(id) %>%
+  summarise(acc = mean(correct)) %>%
+  mutate(time = "0 epoch")
+
+# completely novel items, scores by id
+data_control_new = temp %>%
+  filter(category == "new") %>%
+  group_by(id) %>%
+  summarise(acc = mean(correct)) %>%
+  mutate(time = "0 epoch")
+
+########## combine data from training and control
+alldata = rbind(data_control, data_training)
+newitems = rbind(data_control_new, data_training_new)
+```
+## Analysis
+```{r}
+## stats overall
+m_afex = mixed(acc ~ time  + (1 |id), data = alldata,  REML = TRUE, method = "KR")
+m_afex 
+
+alldata %>%
+  group_by(time) %>%
+  summarise(mean = mean(acc), se = sd(acc)/sqrt(n()))
+
+t.test(acc ~ time, data = alldata, paired = TRUE)
+cohensD(acc ~ time, data = alldata, method = "paired")
+
+## stats new items only
+
+m_afex = mixed(acc ~ time  + (1 |id), data = newitems,  REML = TRUE, method = "KR")
+m_afex 
+
+newitems %>%
+  group_by(time) %>%
+  summarise(mean = mean(acc), se = sd(acc)/sqrt(n()))
+
+t.test(acc ~ time, data = newitems, paired = TRUE)
+cohensD(acc ~ time, data = newitems, method = "paired")
+```
+## Plotting
+```{r}
+### plotting bar graph
+temp = alldata %>%
+  group_by(id, time) %>%
+  summarise(id_acc = mean(acc)) %>%
+  group_by(time) %>%
+  summarise(group_acc = mean(id_acc), se = sd(id_acc)/sqrt(n()))
+
+ggplot(data = temp, aes (x = time, y = group_acc)) +
+  geom_bar(stat = "identity", width = 0.6, fill = c("grey50")) +
+  geom_errorbar(aes (ymin = group_acc - se, ymax = group_acc + se), width = 0.2) +
+  theme_classic(base_size = 17) +
+  ylab("Proportional of correct trials") +
+  ggtitle("Edit distance measure") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("Figures/Figure7a.png", width = 6, height = 4, dpi = 300)
+```
+# Probability analysis
+## Load data
+```{r}
+############### get all data from trained models
+temp = NULL
+
+for (i in 1:50) {
+temp_new = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "new", id = i)
+
+temp_old = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "old", id = i)
+
+temp = rbind(temp, temp_new, temp_old)
+}
+
+data_prob_trained = temp %>%
+   mutate(new_correct = ifelse(correct == "True", 1, 0)) %>%
+  group_by(id, category) %>%
+  summarise(acc = mean(new_correct)) %>%
+  mutate(time = "100 epochs")
+
+############### get all data from control models
+temp = NULL
+
+for (i in 1:50) {
+temp_new = data.frame(read.csv(file=paste0("Data/Models/Probabilities/untrained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "new", id = i)
+
+temp_old = data.frame(read.csv(file=paste0("Data/Models/Probabilities/untrained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "old", id = i)
+
+temp = rbind(temp, temp_new, temp_old)
+}
+
+data_prob_untrained = temp %>%
+  mutate(new_correct = ifelse(correct == "True", 1, 0)) %>%
+  group_by(id, category) %>%
+  summarise(acc = mean(new_correct)) %>%
+  mutate(time = "0 epochs")
+
+########## combine data from training and control
+data_prob_raw_by_time = data_prob_trained %>%
+  rbind(data_prob_untrained)
+```
+## Analysis
+```{r}
+## stats overall
+temp_overall = data_prob_raw_by_time %>%
+  group_by(id, time) %>%
+  summarise(id_acc = mean(acc))
+
+m_afex = mixed(id_acc ~ time  + (1 |id), data = temp_overall,  REML = TRUE, method = "KR")
+m_afex
+
+temp_overall %>%
+  group_by(time) %>%
+  summarise(mean = mean(id_acc), se = sd(id_acc)/sqrt(n()))
+
+t.test(id_acc ~ time, data = temp_overall, paired = TRUE)
+cohensD(id_acc ~ time, data = temp_overall, method = "paired")
+
+## stats new only
+temp = data_prob_raw_by_time %>%
+  filter(category == "new")
+
+m_afex = mixed(acc ~ time  + (1 |id), data = temp,  REML = TRUE, method = "KR")
+m_afex 
+
+temp %>%
+  group_by(time) %>%
+  summarise(mean = mean(acc), se = sd(acc)/sqrt(n()))
+
+t.test(acc ~ time, data = temp, paired = TRUE)
+cohensD(acc ~ time, data = temp, method = "paired")
+```
+## Plotting
+```{r}
+data_plot = data_prob_raw_by_time %>%
+  group_by(id, time) %>%
+  summarise(subj_acc = mean(acc)) %>%
+  group_by(time) %>%
+  summarise(new_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+  
+ggplot(data = data_plot, aes (x = time, y = new_acc)) +
+  geom_bar(stat = "identity", width = 0.6, fill = c("grey50")) +
+  geom_errorbar(aes (ymin = new_acc - se, ymax = new_acc + se), width = 0.2) +
+  theme_classic(base_size = 17) +
+  ylab("Proportional of correct trials") +
+  ggtitle("Probability measure") +
+  theme(plot.title = element_text(hjust = 0.5))
+  
+ggsave("Figures/Figure7b.png", width = 6, height = 4, dpi = 300)
+
+```
+
+# Correlation analysis
+```{r}
+## getting data based on the probablity measure, but it does not matter, 
+## we want the model predicted label for the target and foil, not the accuracy score of 0 or 1
+temp = NULL
+
+for (i in 1:50) {
+temp_new = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "new", id = i)
+
+temp_old = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+  mutate(category = "old", id = i)
+
+temp = rbind(temp, temp_new, temp_old)
+}
+
+# select the true labels, as well as the model predicted labels for the target and foil
+data = temp %>%
+  select(desired_label, target_model_generated_label, foil_word, foil_model_generated_label) %>%
+  rename(target_true = desired_label, target_predicted = target_model_generated_label,
+         foil_true = foil_word, foil_predicted = foil_model_generated_label)
+
+# combine both the target and foil categories into one vector
+output_target = data %>%
+  select(target_true, target_predicted) %>%
+  rename(true = target_true, prediction = target_predicted)
+
+output_foil = data %>%
+  select(foil_true, foil_predicted) %>%
+  rename(true = foil_true, prediction = foil_predicted)
+
+output = rbind(output_target, output_foil)
+
+# import my function
+source("myfunction.R")
+
+# convert number words to numbers for all items
+output = output %>%
+  mutate(true_number = -99, predicted_number = -99) # just a placeholder for now
+
+for (l in 1:nrow(output)) {
+  output$true_number[l] = word2num(output$true[l])[[2]][1]
+  output$predicted_number[l] = word2num(output$prediction[l])[[2]][1]
+}
+
+# calculate correlation between the true numbers and predicted numbers
+cor.test(output$true_number, output$predicted_number, method = "spearman")
+```
+# Attention analysis
+```{r}
+data_old = NULL
+data_new = NULL
+
+for (i in 1:50) {
+
+temp_old = data.frame(read.csv(file=paste0("Data/Models/Attention_measure/kid_trained/att_old_model_",i,".csv"),head=TRUE,sep=",")) %>%
+  mutate(id = i, type = "old")
+
+temp_new = data.frame(read.csv(file=paste0("Data/Models/Attention_measure/kid_trained/att_new_model_",i,".csv"),head=TRUE,sep=","))  %>%
+  mutate(id = i, type = "new")
+  
+data_old = rbind(data_old, temp_old)
+data_new = rbind(data_new, temp_new)
+}
+
+# combine old and new items, to form overall data
+data = rbind(data_old, data_new)
+
+# create new columns for data processing
+data= data %>%
+  mutate(side = ifelse(Left_score > Right_score, 1, 2),
+         un_id = paste(id,Image),
+         left_yes_no = ifelse(side == 1, 1, 0),
+         right_yes_no = ifelse(side == 2, 1, 0)) 
+
+# sanity check: make sure that each id (or model) has 48 images
+temp = data %>%
+  group_by(id, type, Image) %>%
+  summarise(count = n()) %>%
+  group_by(id, type) %>%
+  summarise(count = n())
+
+# convert the predicted labels to numbers
+data[,14] = -99 # just a placeholder for now
+# import my function
+source("myfunction.R")
+
+for (l in 1:nrow(data)) {
+data[l, 14] = word2num(data[l,4])[[2]]
+}
+
+# only look at numbers that are more than 19, but not the ones that only have one word, e.g., thirty
+temp = data %>%
+  filter(V14 > 20) %>%
+  filter(!V14 %in% c(20, 30, 80))
+
+# calculate exclusion rate, only 17% of data
+1-nrow(temp)/nrow(data)
+
+# for the first word, the proportion of left vs. right side
+first_word = temp %>%
+  group_by(un_id, type) %>%
+  filter(min_rank(Word_num) < 2)
+
+first_word_id = first_word %>%
+  group_by(id, side) %>%
+  summarise(count = n()) %>%
+  mutate(freq = count/sum(count))
+
+first_word_overall = first_word_id %>%
+  group_by(side) %>%
+  summarise(total_freq = mean(freq))
+
+first_word_overall
+
+# for the last word, the proportion of left vs. right side
+last_word = temp %>%
+  group_by(un_id, type) %>%
+  filter(min_rank(desc(Word_num)) < 2)
+
+last_word_id = last_word %>%
+  group_by(id, side) %>%
+  summarise(count = n()) %>%
+  mutate(freq = count/sum(count))
+
+last_word_overall = last_word_id %>%
+  group_by(side) %>%
+  summarise(total_freq = mean(freq))
+
+last_word_overall
+```
+# Error pattern analysis
+## Edit distance
+```{r}
+## read in item type csv
+itemtype = data.frame(read.csv(file = "Data/Models/all_testing_pairs.csv")) %>%
+  mutate(item = paste(target, 'v', foil)) %>%
+  rename(type = category) %>%
+  select(item, type)
+
+## load the data based on edit distance
+temp = NULL
+
+for (i in 1:50) {
+  temp_new = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/kid_trained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "new", id = i)
+  
+  temp_old = data.frame(read.csv(file=paste0("Data/Models/Edit_distance/kid_trained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "old", id = i)
+  
+  temp = rbind(temp, temp_new, temp_old)
+}
+
+# convert the target and foil labels to numbers
+temp = temp %>%
+  mutate(true_number = -99, predicted_number = -99) # just placeholders
+
+for (l in 1:nrow(temp)) {
+  temp$true_number[l] = word2num(temp$desired_label[l])[[2]][1]
+  temp$predicted_number[l] = word2num(temp$foil_word[l])[[2]][1]
+}
+
+# add item type of each trial
+temp = temp %>%
+  mutate(item = paste(true_number, 'v',predicted_number)) %>%
+  left_join(itemtype, by = "item")
+
+# calculate acc by item type
+temp_summary = temp %>%
+  group_by(id, type) %>%
+  summarise(acc_group = mean(correct)) %>%
+  group_by(type) %>%
+  summarise(acc_type = mean(acc_group), se = sd(acc_group)/sqrt(n()))
+
+# plotting
+ggplot(data = temp_summary, aes(x = reorder(type, -acc_type), y = acc_type)) +
+  geom_bar(stat = "identity", fill = "grey70") +
+  geom_errorbar(aes(ymin = acc_type - se, ymax = acc_type + se), width = 0.2) +
+  theme_classic((base_size = 20)) + 
+  xlab("Item types") +
+  ylab("Average Accuracy") +
+  ggtitle("Models posttest edit distance measure")
+
+ggsave("Figures/Figure8a.PNG", width = 6, height = 4, dpi = 300)
+```
+## Probablity 
+```{r}
+## load the data based on probability meaesure
+temp = NULL
+
+for (i in 1:50) {
+  temp_new = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_new_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "new", id = i)
+  
+  temp_old = data.frame(read.csv(file=paste0("Data/Models/Probabilities/kid_trained/res_old_model_", i ,".csv"),head=TRUE,sep=",")) %>%
+    mutate(category = "old", id = i)
+  
+  temp = rbind(temp, temp_new, temp_old)
+}
+
+# convert the target and foil labels to numbers
+temp = temp %>%
+  mutate(target_number = -99, foil_number = -99) # just placeholders
+
+for (l in 1:nrow(temp)) {
+  temp$target_number[l] = word2num(temp$desired_label[l])[[2]][1]
+  temp$foil_number[l] = word2num(temp$foil_word[l])[[2]][1]
+}
+
+# add item type of each trial
+temp = temp %>%
+  mutate(item = paste(target_number, 'v',foil_number),
+         correct = ifelse(correct == "True", 1, 0)) %>%
+  left_join(itemtype, by = "item")
+
+# calculate acc by item type
+temp_summary = temp %>%
+  group_by(id, type) %>%
+  summarise(acc_group = mean(correct)) %>%
+  group_by(type) %>%
+  summarise(acc_type = mean(acc_group), se = sd(acc_group)/sqrt(n()))
+
+# plotting
+ggplot(data = temp_summary, aes(x = reorder(type, -acc_type), y = acc_type)) +
+  geom_bar(stat = "identity", fill = "grey70") +
+  geom_errorbar(aes(ymin = acc_type - se, ymax = acc_type + se), width = 0.2) +
+  theme_classic((base_size = 20)) + 
+  xlab("Item types") +
+  ylab("Average Accuracy") +
+  ggtitle("Models posttest probability measure")
+
+ggsave("Figures/Figure8b.PNG", width = 6, height = 4, dpi = 300)
+```

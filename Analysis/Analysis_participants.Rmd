@@ -1,0 +1,456 @@
+---
+title: "Learning the generative principles of a symbol system from limited examples"
+author: "Lei Yuan"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document: default
+---
+
+# Load libraries
+```{r, echo=TRUE, message = FALSE}
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+library("ggplot2")
+library("tidyverse")
+library("afex")
+library("lsr")
+
+set_sum_contrasts() # for experimental designs, set orthogonal sum-to-zero contrasts globally
+```
+# Load data
+``` {r}
+input_file = "Data/Participants/Rawdata.csv"
+d = data.frame(read.csv(file = input_file, head = TRUE, sep = ",")) 
+```
+# E1
+## Baseline measures
+```{r}
+# children in the baseline measures did not improve from pre- to post-tests
+
+temp_subj_control = d %>%
+  filter(Study == "1" & Training_or_control == "Control") %>%
+  group_by(ID, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Control")
+
+m_fex = mixed(subj_acc ~ Time  + (1|ID),data = temp_subj_control, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp_subj_control, paired = TRUE)
+cohensD(subj_acc ~ Time, data = temp_subj_control,method = "paired")
+
+temp_subj_control %>% 
+  group_by(Time) %>%
+  summarise(mean = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+## Main experiment
+### Overall results
+```{r}
+# children in the main experiment showed modest above chance performance at pretest
+temp = d %>%
+  filter(Study == 1 & Time == "pretest" & Training_or_control == "Training") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+t.test(temp$subj_acc, mu = 0.5, alternative = "two.sided")
+
+mean(temp$subj_acc)
+sd(temp$subj_acc)/sqrt(nrow(temp))
+cohensD(temp$subj_acc, mu = 0.5)
+
+# children in the main experiment showed significant improvement from pre- to post-tests
+temp_subj_training = d %>%
+  filter(Study == 1 & Training_or_control == "Training") %>%
+  group_by(ID, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+m_fex = mixed(subj_acc ~ Time  + (1|ID),data = temp_subj_training, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp_subj_training, paired = TRUE)
+
+cohensD(subj_acc ~ Time, data = temp_subj_training,method = "paired")
+
+temp_subj_training %>%
+  group_by(Time) %>%
+  summarise(group_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+
+```
+### Novel items
+```{r}
+# no significant difference between partially novel and totally novel test items (excluding single-digit items) 
+temp = d %>%
+  filter(Study == 1 & Training_or_control == "Training") %>%
+  filter(!Item %in% c("8 vs 2", "15 vs 5")) %>%
+  group_by(ID, Item_type) %>%
+  summarise(subj_acc = mean(Acc)) 
+
+t.test(subj_acc ~ Item_type, data = temp, paired = TRUE)
+cohensD(subj_acc ~ Item_type, data = temp,method = "paired")
+
+temp %>%
+  group_by(Item_type) %>%
+  summarise(group_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+
+# significant learning in completely novel items
+temp = d %>%
+  filter(Study == 1 & Training_or_control == "Training") %>%
+  filter(Item_type == "completely novel") %>%
+  group_by(ID, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+m_fex = mixed(subj_acc ~ Time  + (1|ID),data = temp, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp, paired = TRUE)
+cohensD(subj_acc ~ Time, data = temp,method = "paired")
+
+temp %>%
+  group_by(Time) %>%
+  summarise(mean = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+### Effect of pretest
+```{r}
+# learning was not related to gender, but to age and pretest
+temp = d %>%
+  filter(Study == 1 & Training_or_control == "Training") %>%
+  group_by(ID, Time, Age, Gender) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training") %>%
+  spread(Time, subj_acc) %>%
+  mutate(learning = posttest - pretest)
+
+m = lm(learning ~ Age + Gender + pretest, data = temp)
+summary(m)
+```
+
+## Plots
+```{r}
+# calculate for the training condition, pre- and post-test scores
+temp_subj_training = d %>%
+  filter(Study == "1" & Training_or_control == "Training") %>%
+  group_by(ID, Age, Gender, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+temp_group_training = temp_subj_training %>%
+  mutate(Time = factor(Time, levels = c("pretest", "posttest"))) %>%
+  group_by(Condition, Time) %>%
+  summarise(group_acc = mean(subj_acc), sd = sd(subj_acc), se = sd(subj_acc)/sqrt(n()))
+
+# break the training condition into two sub-categories (high vs. low pre-test group), calutate the pre- and post-test scores for each group 
+
+temp_subj_training_prior = temp_subj_training %>%
+  spread(Time, subj_acc) %>%
+  mutate(Prior_knowledge = ifelse(pretest < 0.65, "Low", "High")) %>%
+  mutate(Prior_knowledge = factor(Prior_knowledge, levels = c("Low", "High"))) %>%
+  gather(key = "Time", value = "subj_acc", pretest, posttest)
+
+temp_group_training_prior = temp_subj_training_prior %>%
+  mutate(Time = factor(Time, levels = c("pretest", "posttest"))) %>%
+  group_by(Prior_knowledge, Time) %>%
+  summarise(group_acc = mean(subj_acc), sd = sd(subj_acc), se = sd(subj_acc)/sqrt(n()))
+
+# combine all three above groups for plotting
+ temp = temp_group_training %>%
+  rename(Prior_knowledge = Condition) %>%
+  rbind(temp_group_training_prior) %>%
+  ungroup() %>%
+  mutate(Prior_knowledge = ifelse(Prior_knowledge == "Training", "Overall", ifelse(Prior_knowledge == "High", "High knowledge", "Low knowledge"))) %>%
+  mutate(Prior_knowledge = factor(Prior_knowledge, levels = c("Overall", "Low knowledge", "High knowledge")))
+
+# plotting
+ggplot(temp , aes(x = Prior_knowledge, y = group_acc, fill = Time)) +
+  geom_bar(stat = "identity", position = position_dodge(0.9)) +
+  geom_errorbar(aes(ymax = group_acc +  se, ymin = group_acc - se), position = position_dodge(0.9), width = 0.2) +
+  theme_classic(base_size = 15) +
+  scale_fill_manual(values = c("grey90", "grey40")) +
+  ylab("Proportion of correct trials") +
+  #ggtitle("Training high vs. low prior knowledge") 
+  theme(axis.title.x=element_blank())
+
+ggsave("Figures/Figure3.png", width = 6.5, height = 4, dpi = 300)
+```
+
+# E2
+## Baseline measures
+```{r}
+# children in the baseline measures did not improve from pre- to post-tests
+temp_subj_control = d %>%
+  filter(Study == "2" & Training_or_control == "Control") %>%
+  group_by(ID, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Control")
+
+m_fex = mixed(subj_acc ~ Time  + (1|ID),data = temp_subj_control, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp_subj_control, paired = TRUE)
+cohensD(subj_acc ~ Time, data = temp_subj_control,method = "paired")
+
+temp_subj_control %>% 
+  group_by(Time) %>%
+  summarise(mean = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+## Main experiment
+### Overall results
+```{r}
+# children in the main experiment showed modest above chance performance at pretest
+temp = d %>%
+  filter(Study == 2 & Time == "pretest" & Training_or_control == "Training") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+t.test(temp$subj_acc, mu = 0.5, alternative = "two.sided")
+
+mean(temp$subj_acc)
+sd(temp$subj_acc)/sqrt(nrow(temp))
+cohensD(temp$subj_acc, mu = 0.5)
+
+# children in the main experiment showed significant improvement from pre- to post-tests
+temp_subj_training = d %>%
+  filter(Study == 2 & Training_or_control == "Training") %>%
+  group_by(ID, Time, Manipulation) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+m_fex = mixed(subj_acc ~ Time * Manipulation  + (1|ID), data = temp_subj_training, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp_subj_training, paired = TRUE)
+cohensD(subj_acc ~ Time, data = temp_subj_training,method = "paired")
+
+temp_subj_training %>%
+  group_by(Time) %>%
+  summarise(group_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+### Novel items
+```{r}
+# no significant difference between partially novel and totally novel test items (excluding single digit numbers) 
+temp = d %>%
+  filter(Study == 2 & Training_or_control == "Training") %>%
+  filter(!Item %in% c("8 vs 2", "15 vs 5")) %>%
+  group_by(ID, Item_type) %>%
+  summarise(subj_acc = mean(Acc)) 
+
+t.test(subj_acc ~ Item_type, data = temp, paired = TRUE)
+cohensD(subj_acc ~ Item_type, data = temp,method = "paired")
+
+temp %>%
+  group_by(Item_type) %>%
+  summarise(group_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+
+# significant learning in completely novel items
+temp = d %>%
+  filter(Study == 2 & Training_or_control == "Training") %>%
+  filter(Item_type == "completely novel") %>%
+  group_by(ID, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+m_fex = mixed(subj_acc ~ Time  + (1|ID),data = temp, REML = TRUE, method = "KR")
+m_fex
+
+t.test(subj_acc ~ Time, data = temp, paired = TRUE)
+cohensD(subj_acc ~ Time, data = temp,method = "paired")
+
+temp %>%
+  group_by(Time) %>%
+  summarise(mean = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+#
+## Plots
+```{r}
+# calculate for the training condition overall pre- and post-test scores
+temp_subj_training = d %>%
+  filter(Study == "2" & Training_or_control == "Training") %>%
+  group_by(ID, Age, Gender, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+temp_group_training = temp_subj_training %>%
+  mutate(Time = factor(Time, levels = c("pretest", "posttest"))) %>%
+  group_by(Condition, Time) %>%
+  summarise(group_acc = mean(subj_acc), sd = sd(subj_acc), se = sd(subj_acc)/sqrt(n())) %>%
+  ungroup %>%
+  mutate(Condition = "All items")
+
+# calculate for the training condition complete novel item only, pre- and post-test scores
+temp_subj_training_novel = d %>%
+  filter(Study == "2" & Training_or_control == "Training" & Item_type == "completely novel") %>%
+  group_by(ID, Age, Gender, Time) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+temp_group_training_novel = temp_subj_training_novel %>%
+  mutate(Time = factor(Time, levels = c("pretest", "posttest"))) %>%
+  group_by(Condition, Time) %>%
+  summarise(group_acc = mean(subj_acc), sd = sd(subj_acc), se = sd(subj_acc)/sqrt(n())) %>%
+  ungroup %>%
+  mutate(Condition = "Completely novel items")
+
+# combine overall and completely novel results
+temp = rbind(temp_group_training, temp_group_training_novel)
+
+# plotting
+ggplot(temp , aes(x = Condition, y = group_acc, fill = Time)) +
+  geom_bar(stat = "identity", position = position_dodge(0.9)) +
+  geom_errorbar(aes(ymax = group_acc +  se, ymin = group_acc - se), position = position_dodge(0.9), width = 0.2) +
+  theme_classic(base_size = 15) +
+  scale_fill_manual(values = c("grey90", "grey40")) +
+  ylab("Proportion of correct trials") +
+  #ggtitle("Training high vs. low prior knowledge") 
+  theme(axis.title.x=element_blank())
+
+ggsave("Figures/Figure5.png", width = 6.5, height = 4, dpi = 300)
+```
+# E3 
+## Error analysiss
+```{r}
+itemtype = data.frame(read.csv(file = "Data/Participants/item_type.csv"))
+
+# get posttest scores from both Study 1&2, add item type column
+temp  = d %>%
+  filter(Training_or_control == "Training") %>%
+  left_join(itemtype, by = "Item") %>%
+  filter(Time == "posttest") %>%
+  group_by(ID, type) %>%
+  summarise(id_acc = mean(Acc)) %>%
+  group_by(type) %>%
+  summarise(type_acc = mean(id_acc), se = sd(id_acc)/sqrt(n()))
+  
+ggplot(data = temp, aes(x = reorder(type, -type_acc), y = type_acc)) +
+  geom_bar(stat = "identity", fill = "grey70") +
+  geom_errorbar(aes(ymin = type_acc - se, ymax = type_acc + se), width = 0.2) +
+  theme_classic((base_size = 20)) + 
+  xlab("Item types") +
+  ylab("Average Accuracy") +
+  ggtitle("Study 1 & 2 posttest")
+
+ggsave("Figures/Figure8c.PNG", width = 6, height = 4, dpi = 300)
+```
+# Supplemental materials
+## Analysis 1 (blindtest)
+```{r}
+### study 1 #######
+s1_blindtesting_data = d %>%
+  filter(Study == 1, Training_or_control == "Training") %>%
+  group_by(blindtested, ID, Time) %>%
+  summarise(acc_subj = mean(Acc)) %>%
+  spread(Time, acc_subj) %>%
+  mutate(learning = posttest - pretest)
+
+t.test(learning ~ blindtested, data = s1_blindtesting_data, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+
+### study 2 #######
+s2_blindtesting_data = d %>%
+  filter(Study == 2, Training_or_control == "Training") %>%
+  group_by(blindtested, ID, Time) %>%
+  summarise(acc_subj = mean(Acc)) %>%
+  spread(Time, acc_subj) %>%
+  mutate(learning = posttest - pretest)
+
+t.test(learning ~ blindtested, data = s2_blindtesting_data, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+```
+## Analysis 2 (no diff in order S1)
+``` {r}
+temp_subj_training_structured = d %>%
+  filter(Study == 1 & Training_or_control == "Training") %>%
+  group_by(ID,Time, Manipulation) %>%
+  summarise(subj_acc = mean(Acc)) %>%
+  mutate(Condition = "Training")
+
+m_fex = mixed(subj_acc ~ Time * Manipulation  + (1|ID),data = temp_subj_training_structured, REML = TRUE, method = "KR")
+m_fex
+
+temp_subj_training_structured %>%
+  group_by(Time, Manipulation) %>%
+  summarise(group_acc = mean(subj_acc), se = sd(subj_acc)/sqrt(n()))
+```
+
+## Analysis 3 (no diff in age and pretest)
+### S1
+```{r}
+# age
+d_training_age = d %>%
+  filter(Training_or_control == "Training" & Study == 1) %>%
+  group_by(ID) %>%
+  summarise(subj_age = mean(Age))
+
+d_control_age = d %>%
+  filter(Training_or_control == "Control" & Study == 1) %>%
+  group_by(ID) %>%
+  summarise(subj_age = mean(Age))
+
+t.test(d_training_age$subj_age, d_control_age$subj_age, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+
+d %>%
+  filter(Training_or_control == "Training" & Study == 1) %>%
+  summarise(subj_age = mean(Age), subj_age_sd = sd(Age))
+
+d %>%
+  filter(Training_or_control == "Control" & Study == 1) %>%
+  summarise(subj_age = mean(Age), subj_age_sd = sd(Age))
+
+# pretest scores
+temp_training = d %>%
+  filter(Training_or_control == "Training" & Study == 1 & Time == "pretest") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+temp_control = d %>%
+  filter(Training_or_control == "Control" & Study == 1 & Time == "pretest") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+t.test(temp_training$subj_acc, temp_control$subj_acc, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+
+temp_training %>%
+  summarise(acc = mean(subj_acc), sd = sd(subj_acc))
+
+temp_control %>%
+  summarise(acc = mean(subj_acc), sd = sd(subj_acc))
+```
+### S2
+```{r}
+# age
+d %>%
+  filter(Training_or_control == "Training" & Study == 2) %>%
+  summarise(subj_age = mean(Age), subj_age_sd = sd(Age))
+
+d %>%
+  filter(Training_or_control == "Control" & Study == 2) %>%
+  summarise(subj_age = mean(Age), subj_age_sd = sd(Age))
+
+d_training_age = d %>%
+  filter(Training_or_control == "Training" & Study == 2) %>%
+  group_by(ID) %>%
+  summarise(subj_age = mean(Age))
+
+d_control_age = d %>%
+  filter(Training_or_control == "Control" & Study == 2) %>%
+  group_by(ID) %>%
+  summarise(subj_age = mean(Age))
+
+t.test(d_training_age$subj_age, d_control_age$subj_age, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+
+# pretest scores
+temp_training = d %>%
+  filter(Training_or_control == "Training" & Study == 2 & Time == "pretest") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+temp_control = d %>%
+  filter(Training_or_control == "Control" & Study == 2 & Time == "pretest") %>%
+  group_by(ID) %>%
+  summarise(subj_acc = mean(Acc))
+
+t.test(temp_training$subj_acc, temp_control$subj_acc, alternative = "two.sided", paired = FALSE, var.equal = TRUE)
+
+temp_training %>%
+  summarise(acc = mean(subj_acc), sd = sd(subj_acc))
+
+temp_control %>%
+  summarise(acc = mean(subj_acc), sd = sd(subj_acc))
+```
