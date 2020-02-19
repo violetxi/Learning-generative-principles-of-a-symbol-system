@@ -1,0 +1,25 @@
+﻿Study,Item,Target_or_foil,Study_item
+1,1000 vs 100,foil,1 1000 vs 100
+1,670 vs 67,foil,1 670 vs 67
+1,201 vs 21,target,1 201 vs 21
+1,105 vs 125,foil,1 105 vs 125
+1,350 vs 305,foil,1 350 vs 305
+1,402 vs 42,foil,1 402 vs 42
+1,15 vs 5,foil,1 15 vs 5
+1,8 vs 2,target,1 8 vs 2
+2,206 vs 260,foil,2 206 vs 260
+2,670 vs 67,foil,2 670 vs 67
+2,1002 vs 1020,target,2 1002 vs 1020
+2,105 vs 125,target,2 105 vs 125
+2,350 vs 305,target,2 350 vs 305
+2,15 vs 5,foil,2 15 vs 5
+2,11 vs 24,foil,2 11 vs 24
+2,8 vs 2,target,2 8 vs 2
+3,206 vs 260,foil,3 206 vs 260
+3,670 vs 67,foil,3 670 vs 67
+3,1002 vs 1020,target,3 1002 vs 1020
+3,105 vs 125,target,3 105 vs 125
+3,350 vs 305,target,3 350 vs 305
+3,15 vs 5,foil,3 15 vs 5
+3,11 vs 24,foil,3 11 vs 24
+3,8 vs 2,target,3 8 vs 2
